@@ -1,6 +1,12 @@
 module Todo.Api where
 
 
+  data TodoDto = TodoDto
+    { name' :: String
+    , description' :: String
+    } deriving Show
+
+
   data Todo = Todo
     { uid :: Int
     , name :: String
@@ -16,15 +22,20 @@ module Todo.Api where
 
   data Request
     = ListRequest
-    | GetRequest Id deriving Show
+    | GetRequest Id
+    | CreateRequest TodoDto deriving Show
 
 
   data Response
     = ListResponse [Todo]
-    | GetResponse Todo deriving Show
+    | GetResponse Todo
+    | CreateResponse Todo deriving Show
 
 
-  newtype Error = TodoNotFound Id deriving Show
+  data Error 
+    = TodoNotFound Id
+    | InvalidName String
+    | DuplicateName String deriving Show
 
 
   handleRequest :: Request -> Either Error Response
@@ -57,3 +68,15 @@ module Todo.Api where
           Left $ TodoNotFound id
       ; return $ GetResponse todo
       }
+
+  handleRequest (CreateRequest TodoDto {name' = name, description' = description})
+    | name == "" = Left $ InvalidName name
+    | name == "foo" = Left $ DuplicateName name
+    | otherwise =
+        Right $
+          CreateResponse Todo
+            { uid = 42
+            , name = name
+            , description = description
+            , completed = False
+            }
