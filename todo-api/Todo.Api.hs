@@ -10,12 +10,16 @@ module Todo.Api where
 
   data Response 
     = ListResponse [String]
-    | GetResponse (Maybe String) deriving Show
+    | GetResponse String deriving Show
 
-  handleRequest :: Request -> Response
-  handleRequest ListRequest = ListResponse ["foo", "bar", "squid"]
+  newtype Error = TodoNotFound Id deriving Show
+
+  handleRequest :: Request -> Either Error Response
+  handleRequest ListRequest = Right $ ListResponse ["foo", "bar", "squid"]
   handleRequest (GetRequest id) =
-    GetResponse $
-      case id of
-        Uid i -> if i == 42 then Just "foo" else Nothing
-        Name n -> if n == "foo" then Just "foo" else Nothing
+    do
+      { todo <- case id of  Uid i | i == 42 -> Right "foo"
+                            Name n | n == "foo" -> Right "foo"
+                            _ -> Left $ TodoNotFound id
+      ; return $ GetResponse todo
+      }
