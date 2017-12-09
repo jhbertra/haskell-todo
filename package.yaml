@@ -23,7 +23,10 @@ dependencies:
 - base >= 4.7 && < 5
 
 library:
-  source-dirs: todo-api
+  source-dirs: 
+    - todo-api
+    - web
+  dependencies: network
 
 executables:
   haskell-todo-exe:

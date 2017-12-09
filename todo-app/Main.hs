@@ -1,4 +1,6 @@
 module Main where
 
+import Web
+
 main :: IO ()
-main = print "hello world"
+main = runServer $ \msg -> return msg
