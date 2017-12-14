@@ -25,7 +25,9 @@ dependencies:
 library:
   source-dirs: 
     - lib
-  dependencies: network
+  dependencies: 
+    - network
+    - parsec
 
 executables:
   haskell-todo-exe:
