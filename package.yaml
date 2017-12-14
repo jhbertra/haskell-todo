@@ -28,6 +28,7 @@ library:
   dependencies: 
     - network
     - parsec
+    - mtl
 
 executables:
   haskell-todo-exe:
