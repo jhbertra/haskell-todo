@@ -24,14 +24,13 @@ dependencies:
 
 library:
   source-dirs: 
-    - todo-api
-    - web
+    - lib
   dependencies: network
 
 executables:
   haskell-todo-exe:
     main:                Main.hs
-    source-dirs:         todo-app
+    source-dirs:         app
     ghc-options:
     - -threaded
     - -rtsopts
