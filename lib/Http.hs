@@ -3,17 +3,29 @@ module Http
   , parseRequest
   ) where
 
-import Data.List
+
+import Control.Applicative
+import Data.CaseInsensitive
 import qualified Text.Parsec as Parsec
 import Text.Parsec ((<?>))
-import Control.Applicative
-import Control.Monad.Identity (Identity)
 
 
 type CfStringParser a = Parsec.Parsec String () a
 
+data Method
+  = Get
+  | Head
+  | Post
+  | Put
+  | Delete
+  | Connect
+  | Options
+  | Trace
+  | Extension String
+  deriving Show
 
-data RequestLine = RequestLine String String String deriving Show
+
+data RequestLine = RequestLine Method String String deriving Show
 data HeaderField = HeaderField String String deriving Show
 data Request = Request RequestLine [HeaderField] String deriving Show
 
@@ -33,15 +45,12 @@ ows :: CfStringParser String
 ows = (Parsec.many $ Parsec.oneOf [' ', '\t']) <?> "Optional Whitespace"
 
 
-rws :: CfStringParser String
-rws = (Parsec.many1 $ Parsec.oneOf [' ', '\t']) <?> "Required Whitespace"
-
-
 tchar :: CfStringParser Char
-tchar = (Parsec.oneOf ['!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~']
-  <|> Parsec.letter
-  <|> Parsec.digit)
-  <?> "A Legal Token Character"
+tchar = 
+  ( Parsec.oneOf ['!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~']
+    <|> Parsec.letter
+    <|> Parsec.digit
+  ) <?> "A Legal Token Character"
 
 
 token :: CfStringParser String
@@ -55,8 +64,21 @@ vchar = Parsec.oneOf ['\0033' .. '\0126']
 -- Request Line
 
 
-method :: CfStringParser String
-method = (Parsec.many1 Parsec.letter) <?> "An HTTP Verb"
+stringToMethod :: String -> Method
+stringToMethod s
+  | s ^== "GET" = Get
+  | s ^== "HEAD" = Head
+  | s ^== "POST" = Post
+  | s ^== "PUT" = Put
+  | s ^== "DELETE" = Delete
+  | s ^== "CONNECT" = Connect
+  | s ^== "OPTIONS" = Options
+  | s ^== "TRACE" = Trace
+  | otherwise = Extension s
+
+
+method :: CfStringParser Method
+method = fmap stringToMethod ((Parsec.many1 Parsec.letter) <?> "An HTTP Verb")
 
 
 requestTarget :: CfStringParser String
@@ -68,11 +90,15 @@ httpVersion = (Parsec.many1 $ Parsec.noneOf [' ', '\r', '\n']) <?> "An HTTP Vers
 
 
 requestLine :: CfStringParser RequestLine
-requestLine = (RequestLine 
-  <$> (method <* space)
-  <*> (requestTarget <* space)
-  <*> (httpVersion <* crlf))
-  <?> "A Request Line"
+requestLine = 
+  ( RequestLine 
+    <$> (method <* space)
+    <*> (requestTarget <* space)
+    <*> (httpVersion <* crlf)
+  ) <?> "A Request Line"
+
+
+-- Headers
 
 
 fieldName :: CfStringParser String
@@ -80,17 +106,22 @@ fieldName = token <?> "A Header Field Name"
 
 
 fieldValue :: CfStringParser String
-fieldValue = ((:) 
-  <$> vchar 
-  <*> (Parsec.many $ Parsec.oneOf[' ', '\t'] <|> vchar))
-  <?> "A Field Value"
+fieldValue = 
+  ( (:) 
+    <$> vchar 
+    <*> (Parsec.many $ Parsec.oneOf[' ', '\t'] <|> vchar)
+  ) <?> "A Field Value"
 
 
 header :: CfStringParser HeaderField
-header = (HeaderField 
-  <$> (fieldName <* Parsec.char ':')
-  <*> (ows *> fieldValue <* ows))
-  <?> "A Header"
+header = 
+  ( HeaderField 
+    <$> (fieldName <* Parsec.char ':')
+    <*> (ows *> fieldValue <* ows)
+  ) <?> "A Header"
+
+
+-- Top Level
 
 
 body :: CfStringParser String
@@ -98,11 +129,12 @@ body = (Parsec.many Parsec.anyChar) <?> "A Body"
 
 
 request :: CfStringParser Request
-request = (Request 
-  <$> requestLine
-  <*> (Parsec.many $ header <* crlf)
-  <*> (crlf *> body))
-  <?> "An HTTP Request"
+request = 
+  ( Request 
+    <$> requestLine
+    <*> (Parsec.many $ header <* crlf)
+    <*> (crlf *> body)
+  ) <?> "An HTTP Request"
 
 
 parseRequest :: String -> Either Parsec.ParseError Request

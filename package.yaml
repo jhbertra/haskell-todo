@@ -28,7 +28,7 @@ library:
   dependencies: 
     - network
     - parsec
-    - mtl
+    - case-insensitive-match
 
 executables:
   haskell-todo-exe:
