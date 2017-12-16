@@ -25,8 +25,15 @@ data Method
   | Extension String
   deriving Show
 
+data RequestTarget
+  = OriginForm String (Maybe String)
+  | AbsoluteForm String
+  | AuthorityForm String
+  | AsteriskForm
+  deriving Show
+
 data Version = Version Int Int deriving Show
-data RequestLine = RequestLine Method String Version deriving Show
+data RequestLine = RequestLine Method RequestTarget Version deriving Show
 data HeaderField = HeaderField String String deriving Show
 data Request = Request RequestLine [HeaderField] (Maybe String) deriving Show
 
@@ -86,8 +93,32 @@ method :: CfStringParser Method
 method = fmap stringToMethod ((Parsec.many1 Parsec.letter) <?> "An HTTP Verb")
 
 
-requestTarget :: CfStringParser String
-requestTarget = (Parsec.many1 $ Parsec.noneOf [' ']) <?> "A Request Target"
+originForm :: CfStringParser RequestTarget
+originForm = 
+  ( OriginForm
+   <$> (Parsec.many1 Parsec.letter)
+   <*> (Parsec.optionMaybe $ Parsec.string "?" *> (Parsec.many1 Parsec.letter))
+  ) <?> "An origin-form target"
+  
+  
+absoluteForm :: CfStringParser RequestTarget
+absoluteForm = (AbsoluteForm <$> (Parsec.many1 Parsec.letter)) <?> "An absolute-form target"
+
+
+authorityForm :: CfStringParser RequestTarget
+authorityForm = (AuthorityForm <$> (Parsec.many1 Parsec.letter)) <?> "An authority-form target"
+
+
+asteriskForm :: CfStringParser RequestTarget
+asteriskForm = fmap (\_ -> AsteriskForm) (Parsec.char '*')
+
+
+requestTarget :: CfStringParser RequestTarget
+requestTarget =
+  originForm
+  <|> absoluteForm
+  <|> authorityForm
+  <|> asteriskForm
 
 
 httpVersion :: CfStringParser Version
