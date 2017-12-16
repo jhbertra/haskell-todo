@@ -6,6 +6,7 @@ module Http
 
 import Control.Applicative
 import Data.CaseInsensitive
+import Data.Char
 import qualified Text.Parsec as Parsec
 import Text.Parsec ((<?>))
 
@@ -24,13 +25,13 @@ data Method
   | Extension String
   deriving Show
 
-
-data RequestLine = RequestLine Method String String deriving Show
+data Version = Version Int Int deriving Show
+data RequestLine = RequestLine Method String Version deriving Show
 data HeaderField = HeaderField String String deriving Show
-data Request = Request RequestLine [HeaderField] String deriving Show
+data Request = Request RequestLine [HeaderField] (Maybe String) deriving Show
 
 
--- HTTP Primatives
+-- Basic
 
 
 space :: CfStringParser String 
@@ -61,6 +62,10 @@ vchar :: CfStringParser Char
 vchar = Parsec.oneOf ['\0033' .. '\0126']
 
 
+idigit :: CfStringParser Int
+idigit = fmap digitToInt Parsec.digit
+
+
 -- Request Line
 
 
@@ -85,8 +90,12 @@ requestTarget :: CfStringParser String
 requestTarget = (Parsec.many1 $ Parsec.noneOf [' ']) <?> "A Request Target"
 
 
-httpVersion :: CfStringParser String
-httpVersion = (Parsec.many1 $ Parsec.noneOf [' ', '\r', '\n']) <?> "An HTTP Version"
+httpVersion :: CfStringParser Version
+httpVersion = 
+  ( Version 
+    <$> (Parsec.string "HTTP/" *> idigit <* (Parsec.char '.'))
+    <*> idigit
+  ) <?> "An HTTP Version of the form HTTP/<major-version>.<minor-version>"
 
 
 requestLine :: CfStringParser RequestLine
@@ -106,11 +115,7 @@ fieldName = token <?> "A Header Field Name"
 
 
 fieldValue :: CfStringParser String
-fieldValue = 
-  ( (:) 
-    <$> vchar 
-    <*> (Parsec.many $ Parsec.oneOf[' ', '\t'] <|> vchar)
-  ) <?> "A Field Value"
+fieldValue = (Parsec.many $ Parsec.oneOf[' ', '\t'] <|> vchar) <?> "A Field Value"
 
 
 header :: CfStringParser HeaderField
@@ -133,7 +138,7 @@ request =
   ( Request 
     <$> requestLine
     <*> (Parsec.many $ header <* crlf)
-    <*> (crlf *> body)
+    <*> (crlf *> (Parsec.optionMaybe body))
   ) <?> "An HTTP Request"
 
 
