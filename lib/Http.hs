@@ -7,6 +7,7 @@ module Http
 import Control.Applicative
 import Data.CaseInsensitive
 import Data.Char
+import Data.List
 import qualified Text.Parsec as Parsec
 import Text.Parsec ((<?>))
 
@@ -25,8 +26,10 @@ data Method
   | Extension String
   deriving Show
 
+newtype AbsolutePath = AbsolutePath [String] deriving Show
+
 data RequestTarget
-  = OriginForm String (Maybe String)
+  = OriginForm AbsolutePath (Maybe String)
   | AbsoluteForm String
   | AuthorityForm String
   | AsteriskForm
@@ -73,6 +76,31 @@ idigit :: CfStringParser Int
 idigit = fmap digitToInt Parsec.digit
 
 
+pseq :: [CfStringParser a] -> CfStringParser [a]
+pseq (x:xs) = (:) <$> x <*> pseq xs
+
+
+pchar :: CfStringParser String
+pchar = 
+  ( (:[]) 
+    <$> 
+      ( Parsec.oneOf ['-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':', '@']
+        <|> Parsec.letter
+        <|> Parsec.digit
+      ) <?> "A Legal Path Character")
+  <|> 
+    (( pseq
+        [ Parsec.char '%'
+        , Parsec.hexDigit
+        , Parsec.hexDigit
+        ]
+    ) <?> "A percent-encoded character")
+
+
+pconcat :: CfStringParser [String] -> CfStringParser String
+pconcat = liftA $ intercalate ""
+
+
 -- Request Line
 
 
@@ -93,11 +121,18 @@ method :: CfStringParser Method
 method = fmap stringToMethod ((Parsec.many1 Parsec.letter) <?> "An HTTP Verb")
 
 
+absolutePath :: CfStringParser AbsolutePath
+absolutePath =
+  ( AbsolutePath
+    <$> (Parsec.many1 $ Parsec.string "/" *> (pconcat $ Parsec.many pchar))
+  ) <?> "An absolute path"
+
+
 originForm :: CfStringParser RequestTarget
 originForm = 
   ( OriginForm
-   <$> (Parsec.many1 Parsec.letter)
-   <*> (Parsec.optionMaybe $ Parsec.string "?" *> (Parsec.many1 Parsec.letter))
+    <$> absolutePath
+    <*> (Parsec.optionMaybe $ Parsec.string "?" *> (Parsec.many1 Parsec.letter))
   ) <?> "An origin-form target"
   
   
@@ -110,7 +145,7 @@ authorityForm = (AuthorityForm <$> (Parsec.many1 Parsec.letter)) <?> "An authori
 
 
 asteriskForm :: CfStringParser RequestTarget
-asteriskForm = fmap (\_ -> AsteriskForm) (Parsec.char '*')
+asteriskForm = AsteriskForm <$ Parsec.char '*'
 
 
 requestTarget :: CfStringParser RequestTarget
