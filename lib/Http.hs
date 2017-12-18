@@ -128,11 +128,15 @@ absolutePath =
   ) <?> "An absolute path"
 
 
+query :: CfStringParser String
+query = pconcat $ Parsec.many $ pchar <|> Parsec.string "/" <|> Parsec.string "?"
+
+
 originForm :: CfStringParser RequestTarget
 originForm = 
   ( OriginForm
     <$> absolutePath
-    <*> (Parsec.optionMaybe $ Parsec.string "?" *> (Parsec.many1 Parsec.letter))
+    <*> (Parsec.optionMaybe $ Parsec.string "?" *> query)
   ) <?> "An origin-form target"
   
   
