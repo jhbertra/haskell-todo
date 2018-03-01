@@ -13,6 +13,12 @@ import Text.Parsec ((<?>))
 
 
 type CfStringParser a = Parsec.Parsec String () a
+type PathSegment = String
+type Scheme = String
+type Query = String
+type UserInfo = String
+type Host = String
+type Port = Int
 
 data Method
   = Get
@@ -26,12 +32,14 @@ data Method
   | Extension String
   deriving Show
 
-newtype AbsolutePath = AbsolutePath [String] deriving Show
+newtype Path = Path [PathSegment] deriving Show
+data Authority = Authority (Maybe UserInfo) Host (Maybe Port) deriving Show
+data AbsoluteUri = AbsoluteUri Scheme Authority Path (Maybe Query) deriving Show
 
 data RequestTarget
-  = OriginForm AbsolutePath (Maybe String)
-  | AbsoluteForm String
-  | AuthorityForm String
+  = OriginForm Path (Maybe String)
+  | AbsoluteForm AbsoluteUri
+  | AuthorityForm Authority
   | AsteriskForm
   deriving Show
 
@@ -76,25 +84,30 @@ idigit :: CfStringParser Int
 idigit = fmap digitToInt Parsec.digit
 
 
+integer :: CfStringParser Int
+integer = fmap read (Parsec.many1 Parsec.digit)
+
+
 pseq :: [CfStringParser a] -> CfStringParser [a]
 pseq (x:xs) = (:) <$> x <*> pseq xs
 
 
+unreserved :: CfStringParser Char
+unreserved = Parsec.oneOf ['-', '.', '_', '~'] <|> Parsec.letter <|> Parsec.digit
+
+
+pctEncoded :: CfStringParser String
+pctEncoded = pseq [Parsec.char '%', Parsec.hexDigit, Parsec.hexDigit]
+
+
+subDelims :: CfStringParser Char
+subDelims = Parsec.oneOf ['!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=']
+
+
 pchar :: CfStringParser String
 pchar = 
-  ( (:[]) 
-    <$> 
-      ( Parsec.oneOf ['-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':', '@']
-        <|> Parsec.letter
-        <|> Parsec.digit
-      ) <?> "A Legal Path Character")
-  <|> 
-    (( pseq
-        [ Parsec.char '%'
-        , Parsec.hexDigit
-        , Parsec.hexDigit
-        ]
-    ) <?> "A percent-encoded character")
+  ((:[]) <$> (unreserved <|> subDelims <|> Parsec.oneOf [':', '@']) <?> "A Legal Path Character")
+  <|> (pctEncoded <?> "A percent-encoded character")
 
 
 pconcat :: CfStringParser [String] -> CfStringParser String
@@ -121,27 +134,64 @@ method :: CfStringParser Method
 method = fmap stringToMethod ((Parsec.many1 Parsec.letter) <?> "An HTTP Verb")
 
 
-absolutePath :: CfStringParser AbsolutePath
+absolutePath :: CfStringParser Path
 absolutePath =
-  ( AbsolutePath
+  ( Path
     <$> (Parsec.many1 $ Parsec.string "/" *> (pconcat $ Parsec.many pchar))
   ) <?> "An absolute path"
 
 
 query :: CfStringParser String
-query = pconcat $ Parsec.many $ pchar <|> Parsec.string "/" <|> Parsec.string "?"
+query = (pconcat $ Parsec.many $ pchar <|> Parsec.string "/" <|> Parsec.string "?") <?> "A query"
 
 
 originForm :: CfStringParser RequestTarget
-originForm = 
-  ( OriginForm
-    <$> absolutePath
-    <*> (Parsec.optionMaybe $ Parsec.string "?" *> query)
-  ) <?> "An origin-form target"
-  
+originForm = OriginForm <$> absolutePath <*> (Parsec.optionMaybe $ Parsec.string "?" *> query)
+
+
+scheme :: CfStringParser String
+scheme = 
+  ( (++) 
+    <$> ((:[]) <$> Parsec.letter)
+    <*> (Parsec.many $ Parsec.letter <|> Parsec.digit <|> Parsec.oneOf ['+', '-', '.'])
+  ) <?> "A Scheme"
+
+
+userInfo :: CfStringParser UserInfo
+userInfo =
+  pconcat $ Parsec.many $
+    ((:[]) <$> (unreserved <|> subDelims <|> Parsec.oneOf [':']) <?> "A userinfo Character")
+    <|> (pctEncoded <?> "A percent-encoded character")
+
+
+ipLiteral :: CfStringParser String
+ipLiteral = Parsec.string "[" *> (ipV6Address <|> ipVFuture) <* Parsec.string "]"
+
+
+host :: CfStringParser Host
+host = ipLiteral <|> ipv4Address <|> regName
+
+
+authority :: CfStringParser Authority
+authority =
+  ( Authority
+    <$> (Parsec.optionMaybe $ userInfo <* Parsec.string "@")
+    <*> host
+    <*> (Parsec.optionMaybe $ Parsec.string ":" *> integer)
+  )
+
+
+absoluteUri :: CfStringParser AbsoluteUri
+absoluteUri =
+  AbsoluteUri
+  <$> (scheme <* Parsec.string ":")
+  <*> authority
+  <*> hierPartPath
+  <*> (Parsec.optionMaybe $ Parsec.string "?" *> query)
+
   
 absoluteForm :: CfStringParser RequestTarget
-absoluteForm = (AbsoluteForm <$> (Parsec.many1 Parsec.letter)) <?> "An absolute-form target"
+absoluteForm = AbsoluteForm <$> absouteUri
 
 
 authorityForm :: CfStringParser RequestTarget
